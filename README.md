@@ -6,6 +6,23 @@ Lumen is a modern, enterprise-grade WebRTC customer support platform designed sp
 
 ---
 
+## ✨ Key Features
+
+1. **Self-Hosted Real-Time WebRTC Media Routing**
+   - High-fidelity audio, video, and screen sharing using LiveKit.
+   - Media routed directly through our own server infrastructure to maintain data sovereignty and comply with strict hackathon rules.
+2. **AI-Powered Agent Assist (Google Gemini)**
+   - Leverages **Gemini 1.5 Flash** for blazing-fast real-time transcription analysis and sentiment tracking.
+   - Extracts pain points automatically without the agent needing to manually log details.
+3. **Mathematical RAG (Retrieval-Augmented Generation)**
+   - Automatically surfaces relevant support documents using custom mathematical cosine-similarity searches with `text-embedding-004` against an internal knowledge base.
+4. **Post-Call Automations**
+   - After a call ends, Lumen automatically processes the transcript to generate a comprehensive **Call Summary** and drafts a structured **Support Ticket** with resolutions and follow-up actions.
+5. **Real-Time Analytics Dashboard**
+   - Real-time visibility into customer satisfaction (CSAT) scores, agent performance, and automated ticket categorization.
+
+---
+
 ## 🛠️ The Making of Lumen (Architecture & Technical Decisions)
 
 Building Lumen in a hackathon timeframe required making deliberate architectural choices to balance real-time performance with a beautiful, responsive user experience. 
@@ -15,8 +32,9 @@ Traditional customer support tools rely heavily on polling, which creates a slug
 - **WebRTC for Media:** We chose **LiveKit** to handle all audio, video, and screen-sharing routing. Unlike simple peer-to-peer WebRTC, using a Selective Forwarding Unit (SFU) allows us to support multi-participant calls and server-side egress recording seamlessly.
 - **Server-Sent Events (SSE) for State:** To keep the agent dashboards instantly synchronized without hammering the database, we implemented an SSE streaming architecture.
 
-### 2. The AI Architecture (Mathematical RAG)
+### 2. The AI Architecture (Gemini + Mathematical RAG)
 Most RAG implementations require spinning up a heavy vector database like Pinecone or PostgreSQL with `pgvector`. 
+- **Google Gemini Integration:** We migrated the entire AI stack to use the highly capable Google Gemini SDK. 
 - **In-Memory Cosine Similarity:** To ensure 100% deployment compatibility and blazing-fast local performance during the hackathon, we implemented a custom mathematical RAG engine directly inside Node.js. The AI uses Cosine Similarity to instantly fetch relevant mock-company documentation to assist the agent based on the live context.
 - **Asynchronous AI Processing:** Intensive LLM tasks like generating summaries and resolving ticket categories are offloaded to **BullMQ** and **Upstash Redis**. This keeps our Next.js API routes blazingly fast and non-blocking.
 
@@ -29,33 +47,37 @@ We utilized Next.js App Router, taking advantage of React Server Components to m
 
 Since we don't have a video, here is how you can demo the platform yourself and see the magic in real-time.
 
-### Step 1: The Agent Experience
-1. Start the application (see Setup Instructions below).
+### Step 1: Populate Historical Data
+Before starting, we recommend populating the system with historical data so the Analytics Dashboard looks incredible.
+Run our automated seeding script (see Setup Instructions below) to generate rich, AI-analyzed past calls.
+
+### Step 2: The Agent Experience
+1. Start the application.
 2. Open a standard browser window and go to `http://localhost:3000`.
 3. Log in with the **Agent Credentials**:
-   - **Email:** `agent@lumen.com`
+   - **Email:** `agent1@lumen.com` (or `agent@lumen.com`)
    - **Password:** `demo123`
 4. You will land on the Agent Dashboard. Click **"Create Session"** to initialize a new secure support room.
 5. Copy the generated **Join Link**.
 
-### Step 2: The Customer Experience
+### Step 3: The Customer Experience
 1. Open an **Incognito / Private Window** (this is crucial to simulate a second user).
 2. Paste the Join Link and log in with the **Customer Credentials**:
    - **Email:** `customer@lumen.com`
    - **Password:** `demo123`
 3. Grant camera and microphone permissions.
 
-### Step 3: The Magic (Put Windows Side-by-Side)
+### Step 4: The Magic (Put Windows Side-by-Side)
 Position both browser windows side-by-side to witness the real-time capabilities:
 - **Zero-Latency Video/Audio:** Watch the WebRTC feed sync instantly.
 - **Live Closed Captions:** Speak into your microphone and watch the accessibility transcription overlay the customer video feed in real-time.
 - **AI Agent Assist:** As you chat or speak, watch the AI on the Agent's screen automatically extract sentiment, suggest solutions, and pull data from the knowledge base without the agent having to type a single search query!
 
-### Step 4: Admin & Analytics
+### Step 5: Admin & Analytics
 1. Open a new tab and log in as the **Admin**:
    - **Email:** `admin@lumen.com`
    - **Password:** `demo123`
-2. Navigate to `/admin` to view the beautiful Recharts dashboard mapping average Customer Satisfaction (CSAT) and AI ticket category distribution.
+2. Navigate to `/admin` to view the beautiful Recharts dashboard mapping average Customer Satisfaction (CSAT), ticket histories, and AI category distributions.
 
 ---
 
@@ -68,7 +90,7 @@ To run Lumen locally on your machine:
 - Docker and Docker Compose
 - A PostgreSQL database (e.g., Supabase)
 - An Upstash Redis instance (or local Redis)
-- OpenAI API Key
+- **Google Gemini API Key** (Set as `GOOGLE_GEMINI_API_KEY`)
 
 ### 2. Environment Variables
 Copy the example environment file and fill in your keys:
@@ -76,7 +98,7 @@ Copy the example environment file and fill in your keys:
 cd frontend
 cp .env.example .env.local
 ```
-Ensure you set your `DATABASE_URL`, `OPENAI_API_KEY`, and `UPSTASH_REDIS_REST_URL`.
+Ensure you set your `DATABASE_URL`, `GOOGLE_GEMINI_API_KEY`, and `UPSTASH_REDIS_REST_URL`.
 
 ### 3. Start the Media Infrastructure
 Start the self-hosted LiveKit Server and LiveKit Egress engine:
@@ -85,19 +107,23 @@ docker compose up -d
 ```
 *(This spins up `livekit-server`, `livekit-egress`, and `redis` locally.)*
 
-### 4. Database Setup & RAG Initialization
-Push the Prisma schema to your PostgreSQL database, generate demo users, and seed the mock company documentation to generate vector embeddings:
+### 4. Database Setup & Seeding
+Push the Prisma schema to your PostgreSQL database, generate demo users, and seed historical calls to populate the analytics dashboard:
 ```bash
 cd frontend
 npm install
 npx prisma db push
 npx prisma generate
+
+# 1. Ensure basic demo users exist
 npx tsx --env-file=.env.local scripts/seed-demo-users.ts
-npx tsx --env-file=.env.local scripts/seed-kb.ts
+
+# 2. Seed historical calls, metrics, and tickets for the dashboard
+npx tsx --env-file=.env.local scripts/seed-dashboard.ts
 ```
 
 ### 5. Run the Application
-Start the Next.js development server:
+Start the Next.js development server and the background workers:
 ```bash
 npm run dev
 ```
