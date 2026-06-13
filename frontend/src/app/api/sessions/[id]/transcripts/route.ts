@@ -42,7 +42,7 @@ export async function POST(
       // Async offload to BullMQ for sentiment analysis
       // To avoid spamming OpenAI, we could add logic to only queue if last sentiment check was > 5s ago
       // For hackathon demo, we'll queue it.
-      await backgroundQueue.add('ANALYZE_SENTIMENT', { sessionId: params.id });
+      await backgroundQueue?.add('ANALYZE_SENTIMENT', { sessionId: params.id });
     }
 
     return NextResponse.json(transcript, { status: 201 });

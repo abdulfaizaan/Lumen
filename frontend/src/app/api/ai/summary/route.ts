@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { OpenAI } from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { logger } from "@/lib/logger";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY || "dummy_key");
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -53,23 +51,12 @@ Provide a JSON response with the following structure:
 }
 `;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: "You are an AI Support Manager. Always respond with valid JSON matching the requested structure.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.2,
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    const fullPrompt = `You are an AI Support Manager. Always respond with valid JSON matching the requested structure.\n\n${prompt}`;
+    
+    const response = await model.generateContent(fullPrompt);
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(response.response.text() || "{}");
 
     return NextResponse.json(result);
   } catch (error) {

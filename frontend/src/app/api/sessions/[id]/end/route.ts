@@ -86,7 +86,7 @@ export async function POST(
     eventBus.publish('SESSION_ENDED', { sessionId: params.id, durationSeconds });
 
     // Queue post-call AI processing
-    await backgroundQueue.add('POST_CALL_ANALYSIS', { sessionId: params.id });
+    await backgroundQueue?.add('POST_CALL_ANALYSIS', { sessionId: params.id });
 
     return NextResponse.json({ success: true, durationSeconds });
   } catch (error) {

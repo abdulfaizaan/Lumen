@@ -2,13 +2,11 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { logger } from '../logger';
 import { prisma } from '../prisma';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AI_PROMPTS } from '../ai/prompts';
 import { eventBus } from '../events/EventBus';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'dummy_key',
-});
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY || 'dummy_key');
 
 // Use UPSTASH_REDIS_REST_URL or standard REDIS_URL
 const redisUrl = process.env.REDIS_URL || process.env.UPSTASH_REDIS_REST_URL;
@@ -89,28 +87,16 @@ async function runPostCallAnalysis(sessionId: string) {
 
     const transcriptText = transcripts.map(t => `${t.participantIdentity}: ${t.text}`).join('\n');
 
-    if (process.env.OPENAI_API_KEY) {
+    if (process.env.GOOGLE_GEMINI_API_KEY) {
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+
       // 1. Generate Summary
-      const summaryRes = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: AI_PROMPTS.sessionSummary },
-          { role: "user", content: transcriptText }
-        ],
-        response_format: { type: "json_object" }
-      });
-      const summary = JSON.parse(summaryRes.choices[0].message.content || '{}');
+      const summaryRes = await model.generateContent(`${AI_PROMPTS.sessionSummary}\n\nTranscript:\n${transcriptText}`);
+      const summary = JSON.parse(summaryRes.response.text() || '{}');
 
       // 2. Generate Ticket
-      const ticketRes = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: AI_PROMPTS.ticketGenerator },
-          { role: "user", content: transcriptText }
-        ],
-        response_format: { type: "json_object" }
-      });
-      const ticket = JSON.parse(ticketRes.choices[0].message.content || '{}');
+      const ticketRes = await model.generateContent(`${AI_PROMPTS.ticketGenerator}\n\nTranscript:\n${transcriptText}`);
+      const ticket = JSON.parse(ticketRes.response.text() || '{}');
 
       // Update DB
       await prisma.meeting.update({
@@ -135,7 +121,7 @@ async function runPostCallAnalysis(sessionId: string) {
         }
       });
     } else {
-      logger.warn("OPENAI_API_KEY not set. Skipping real AI generation.");
+      logger.warn("GOOGLE_GEMINI_API_KEY not set. Skipping real AI generation.");
     }
   } catch (err: any) {
     logger.error("Failed post-call analysis", err);
@@ -155,17 +141,11 @@ async function runLiveSentimentAnalysis(sessionId: string) {
     // Reverse to chronological
     const text = recentTranscripts.reverse().map(t => `${t.participantIdentity}: ${t.text}`).join('\n');
 
-    if (process.env.OPENAI_API_KEY) {
-      const res = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: AI_PROMPTS.liveSentiment },
-          { role: "user", content: text }
-        ],
-        response_format: { type: "json_object" }
-      });
+    if (process.env.GOOGLE_GEMINI_API_KEY) {
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+      const res = await model.generateContent(`${AI_PROMPTS.liveSentiment}\n\nTranscript:\n${text}`);
       
-      const sentiment = JSON.parse(res.choices[0].message.content || '{}');
+      const sentiment = JSON.parse(res.response.text() || '{}');
       
       // Emit to WebSockets
       eventBus.publish('AI_SENTIMENT_UPDATE', {
@@ -176,11 +156,9 @@ async function runLiveSentimentAnalysis(sessionId: string) {
       // Mathematical RAG Integration
       let kbContext = "No relevant knowledge base articles found.";
       try {
-        const embedRes = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: text
-        });
-        const queryEmbedding = embedRes.data[0].embedding;
+        const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const embedRes = await embeddingModel.embedContent(text);
+        const queryEmbedding = embedRes.embedding.values;
 
         const articles = await prisma.knowledgeArticle.findMany();
         if (articles.length > 0) {
@@ -197,16 +175,9 @@ async function runLiveSentimentAnalysis(sessionId: string) {
       }
 
       // Real Agent Assist AI Call
-      const assistRes = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: AI_PROMPTS.agentAssist },
-          { role: "user", content: `Customer Transcript:\n${text}\n\nInternal Knowledge Base:\n${kbContext}` }
-        ],
-        response_format: { type: "json_object" }
-      });
+      const assistRes = await model.generateContent(`${AI_PROMPTS.agentAssist}\n\nCustomer Transcript:\n${text}\n\nInternal Knowledge Base:\n${kbContext}`);
       
-      const assistData = JSON.parse(assistRes.choices[0].message.content || '{}');
+      const assistData = JSON.parse(assistRes.response.text() || '{}');
       
       if (assistData.recommendation) {
         eventBus.publish('AI_AGENT_ASSIST', {
