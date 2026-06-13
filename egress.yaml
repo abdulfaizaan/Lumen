@@ -1,5 +1,0 @@
-api_key: lumen_key
-api_secret: lumen_secret
-ws_url: ws://livekit:7880
-redis:
-  address: redis:6379
