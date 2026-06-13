@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────
+
+enum SessionStatus {
+  WAITING
+  ACTIVE
+  ENDED
+  FAILED
+}
+
+enum UserRole {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum AgentStatus {
+  ONLINE
+  BUSY
+  OFFLINE
+  AWAY
+}
+
+enum SupportRequestStatus {
+  WAITING
+  ASSIGNED
+  ACTIVE
+  CLOSED
+}
+
+enum RecordingStatus {
+  RECORDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum EventType {
+  PARTICIPANT_JOINED
+  PARTICIPANT_LEFT
+  RECORDING_STARTED
+  RECORDING_STOPPED
+  SESSION_ENDED
+}
+
+// ─── Auth Models (NextAuth) ──────────────────────────────────────
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(CUSTOMER)
+
+  accounts         Account[]
+  sessions         Session[]
+  agentMeetings    Meeting[]      @relation("AgentMeetings")
+  customerMeetings Meeting[]      @relation("CustomerMeetings")
+  messages         Message[]
+  sessionEvents    SessionEvent[]
+  attachments      Attachment[]
+  supportRequests  SupportRequest[] @relation("CustomerRequests")
+  assignedRequests SupportRequest[] @relation("AgentAssignedRequests")
+  transferredFromMeetings Meeting[] @relation("TransferredFrom")
+  transferredToMeetings   Meeting[] @relation("TransferredTo")
+
+  agentStatus      AgentStatus    @default(OFFLINE)
+  deletedAt        DateTime?
+
+  @@index([agentStatus])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Business Models ─────────────────────────────────────────────
+
+model Meeting {
+  id           String        @id @default(uuid())
+  status       SessionStatus @default(WAITING)
+  agentId      String
+  agent        User          @relation("AgentMeetings", fields: [agentId], references: [id], onDelete: Cascade)
+  customerId   String?
+  customer     User?         @relation("CustomerMeetings", fields: [customerId], references: [id])
+  customerName String?
+  joinToken    String        @unique
+  meetingId    String        @unique @default(uuid())
+  passcode     String
+  notes        String?       @db.Text
+  csatScore    Int?
+  csatFeedback String?       @db.Text
+
+  // ── Session Transfer ──
+  transferredFromId String?
+  transferredFrom   User?    @relation("TransferredFrom", fields: [transferredFromId], references: [id])
+  transferredToId   String?
+  transferredTo     User?    @relation("TransferredTo", fields: [transferredToId], references: [id])
+
+  supportRequestId  String?  @unique
+  supportRequest    SupportRequest? @relation(fields: [supportRequestId], references: [id])
+
+  // ── AI Summaries & Sentiment ──
+  sentimentScore    Float?
+  frustrationLevel  String?
+  summaryProblem    String?  @db.Text
+  summaryActions    String?  @db.Text
+  summaryResolution String?  @db.Text
+  summaryFollowUp   String?  @db.Text
+
+  // ── Timing ──
+  startedAt       DateTime?
+  endedAt         DateTime?
+  durationSeconds Int       @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  // ── Relations ──
+  messages    Message[]
+  events      SessionEvent[]
+  recordings  Recording[]
+  attachments Attachment[]
+  transcripts Transcript[]
+  supportTicket SupportTicket?
+
+  @@index([agentId, createdAt(sort: Desc)])
+  @@index([status])
+  @@index([customerId])
+  @@index([meetingId, passcode])
+}
+
+model SupportRequest {
+  id           String               @id @default(uuid())
+  customerId   String
+  customer     User                 @relation("CustomerRequests", fields: [customerId], references: [id])
+  customerName String
+  issueSummary String               @db.Text
+  priority     Int                  @default(1)
+  status       SupportRequestStatus @default(WAITING)
+  
+  assignedToId String?
+  assignedTo   User?                @relation("AgentAssignedRequests", fields: [assignedToId], references: [id])
+  
+  meeting      Meeting?
+
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
+
+  @@index([status, createdAt])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  sessionId  String
+  session    Meeting  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User     @relation(fields: [senderId], references: [id])
+  senderRole UserRole
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt])
+}
+
+model SessionEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Meeting  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  eventType EventType
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  metadata  String?  @db.Text
+  timestamp DateTime @default(now())
+  deletedAt DateTime?
+
+  @@index([sessionId, timestamp])
+}
+
+model Recording {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Meeting  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  status    RecordingStatus @default(RECORDING)
+  fileUrl   String?
+  duration  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([sessionId])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Meeting  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  fileName  String
+  fileUrl   String
+  fileType  String
+  fileSize  BigInt
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  @@index([sessionId])
+}
+
+// ─── AI Feature Models ──────────────────────────────────────────
+
+model Transcript {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Meeting  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participantIdentity String
+  participantName     String?
+  text        String   @db.Text
+  isFinal     Boolean  @default(true)
+  timestamp   DateTime @default(now())
+
+  @@index([sessionId, timestamp])
+}
+
+model SupportTicket {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  session     Meeting  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  category    String
+  priority    String
+  issue       String   @db.Text
+  resolution  String   @db.Text
+  status      String
+  confidenceScore Float?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model KnowledgeArticle {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @db.Text
+  tags        String[]
+  embedding   Float[]  // 1536-dimensional array for mathematical RAG
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([title])
+}

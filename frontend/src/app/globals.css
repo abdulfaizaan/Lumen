@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  
+  --color-lumen-pure: #00E5FF;
+  --color-lumen-success: #4ADE80;
+  --color-lumen-warning: #FBBF24;
+  --color-lumen-error: #FB7185;
+  
+  --color-lumen-surface: rgba(255, 255, 255, 0.03);
+  --color-lumen-surface-hover: rgba(255, 255, 255, 0.06);
+  --color-lumen-border: rgba(255, 255, 255, 0.1);
+  --color-lumen-border-strong: rgba(255, 255, 255, 0.2);
+
+  --font-sans: var(--font-inter), sans-serif;
+  --font-heading: var(--font-outfit), sans-serif;
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-shimmer: shimmer 2s infinite;
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}
+
+:root {
+  --background: #050505; /* Deep obsidian */
+  --foreground: #fafafa;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Utilities for Glassmorphism */
+@utility glass {
+  background: var(--color-lumen-surface);
+  backdrop-filter: blur(40px);
+  border: 1px solid var(--color-lumen-border);
+}
+
+@utility text-glow {
+  text-shadow: 0 0 12px rgba(0, 229, 255, 0.6);
+}
