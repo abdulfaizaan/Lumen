@@ -27,6 +27,54 @@ Lumen is a modern, enterprise-grade WebRTC customer support platform designed sp
 
 Building Lumen in a hackathon timeframe required making deliberate architectural choices to balance real-time performance with a beautiful, responsive user experience. 
 
+```mermaid
+graph TD
+    %% Users
+    Agent[Agent Client]
+    Customer[Customer Client]
+    
+    %% Core Infrastructure
+    subNext[Next.js App Router]
+    DB[(PostgreSQL + Prisma)]
+    
+    %% Real-Time & Media
+    LiveKit[LiveKit WebRTC Server]
+    LiveKitEgress[LiveKit Egress Engine]
+    
+    %% AI & Background Workers
+    subRedis[Upstash Redis]
+    Worker[BullMQ Worker Node]
+    Gemini[Google Gemini API]
+    
+    %% Connections
+    Agent <-->|SSE State Updates| subNext
+    Customer <-->|WebSockets| subNext
+    
+    Agent <-->|Audio/Video DataChannel| LiveKit
+    Customer <-->|Audio/Video DataChannel| LiveKit
+    
+    LiveKit -->|Recordings| LiveKitEgress
+    LiveKitEgress -.->|Save MP4| DB
+    
+    subNext <-->|Read/Write| DB
+    
+    subNext -->|Enqueue AI Jobs| subRedis
+    subRedis -->|Dequeue| Worker
+    
+    Worker <-->|RAG Embeddings & Generation| Gemini
+    Worker -->|Update Tickets/Summaries| DB
+    
+    classDef client fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:#fff;
+    classDef server fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff;
+    classDef ai fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff;
+    classDef db fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#fff;
+    
+    class Agent,Customer client;
+    class subNext,LiveKit,LiveKitEgress,Worker server;
+    class Gemini ai;
+    class DB,subRedis db;
+```
+
 ### 1. The Real-Time Engine (WebRTC & SSE)
 Traditional customer support tools rely heavily on polling, which creates a sluggish user experience. 
 - **WebRTC for Media:** We chose **LiveKit** to handle all audio, video, and screen-sharing routing. Unlike simple peer-to-peer WebRTC, using a Selective Forwarding Unit (SFU) allows us to support multi-participant calls and server-side egress recording seamlessly.
